@@ -1,34 +1,708 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+
+    <!-- ================================================================ -->
+    <!--  ① 引入 Spring Boot 的默认日志配置                              -->
+    <!-- ================================================================ -->
+    <!--
+      这行代码的作用：把 Spring Boot 内置的 defaults.xml 文件导入到当前配置中。
+      
+      defaults.xml 里面有什么？
+      ├─ CONSOLE_LOG_CHARSET（控制台字符编码，默认 UTF-8）
+      ├─ FILE_LOG_CHARSET（文件字符编码，默认 UTF-8）
+      ├─ LOG_DATEFORMAT_PATTERN（日期格式，默认 yyyy-MM-dd HH:mm:ss.SSS）
+      ├─ LOG_LEVEL_PATTERN（日志级别格式，默认 %5p）
+      └─ 其他几个 Logback 标准默认值
+      
+      这些默认值被定义好后，下面就可以用 ${变量名} 来引用它们。
+      比如 ${CONSOLE_LOG_CHARSET} 就是 "UTF-8"。
+      
+      如果你不 include 这个文件，也可以手动定义这些属性，但 Spring Boot
+      推荐 include 它省事。
+    -->
     <include resource="org/springframework/boot/logging/logback/defaults.xml" />
 
+
+    <!-- ================================================================ -->
+    <!--  ② 定义日志输出格式（Layout / Pattern）                         -->
+    <!-- ================================================================ -->
+    <!--
+      这是整个配置里最关键也最难懂的部分。下面逐个拆解每个占位符的含义。
+      
+      ★ 控制台日志格式（带颜色）：
+    -->
     <property name="CONSOLE_LOG_PATTERN"
               value="%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd HH:mm:ss.SSS}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p})  %clr([%15.15t]){faint} %clr(\(%X{reqId:-system}\)){faint} %clr(--){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+
+    <!--
+      ★ 文件日志格式（不带颜色，纯文本）：
+    -->
     <property name="FILE_LOG_PATTERN"
               value="%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd HH:mm:ss.SSS}} ${LOG_LEVEL_PATTERN:-%5p} ${PID:- } --- [%t] \(%X{reqId:-system}\) %-40.40logger{39} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
 
+    <!--
+      ═══════════════════════════════════════════════════════════════════
+      
+      占位符详细对照表（以下每个 %X 都是一个"占位符"，运行时会替换成实际值）：
+      
+      ═══ 时间 ═══
+      %d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd HH:mm:ss.SSS}}
+        ├─ %d{...}      → date（日期），按指定格式输出时间
+        ├─ ${...}       → 引用 defaults.xml 里定义的变量
+        └─ :-后面的内容  → 如果变量未定义就用这个默认值
+        输出示例：2026-06-27 14:30:22.123
+      
+      ═══ 日志级别 ═══
+      ${LOG_LEVEL_PATTERN:-%5p}
+        ├─ %5p          → priority（优先级/级别），右对齐占5个字符
+        └─ 输出示例：" INFO"（前面1个空格，右对齐）
+      
+      ═══ 线程信息 ═══
+      [%15.15t]
+        ├─ %t           → thread（线程名）
+        ├─ 15.15        → 最少15个字符，最多15个字符（截断对齐）
+        └─ 输出示例："[       main]" 或 "[http-nio-8080-]"
+      
+      ═══ 请求追踪ID ═══
+      %X{reqId:-system}
+        ├─ %X{...}      → MDC（Mapped Diagnostic Context）中取的值
+        ├─ reqId        → 键名，对应 MDC 中存入的请求追踪 ID
+        └─ :-system     → 如果没有这个值（没设 MDC），显示 "system"
+        输出示例：(abc-123-def) 或 (system)
+      
+      ═══ Logger名称 ═══
+      %-40.40logger{39}
+        ├─ %logger{39}  → Logger 名称，只保留最后 39 个字符
+        ├─ -40.40       → 左对齐(-)，最少40字符，最多40字符
+        └─ 输出示例：c.e.s.impl.AccountServiceImpl
+      
+      ═══ 日志消息 ═══
+      %m
+        ├─ m            → message（实际日志内容）
+        └─ 就是你代码里 log.info("xxx") 的那个 "xxx"
+      
+      ═══ 换行 ═══
+      %n
+        ├─ n            → newline（换行符）
+        └─ Windows=\r\n，Linux/Mac=\n
+      
+      ═══ 颜色（仅控制台） ═══
+      %clr(...){faint}
+        ├─ %clr         → color（上色）
+        ├─ {faint}      → 颜色样式：faint=淡色，cyan=青色，默认按级别上色
+        ├─ 不同日志级别自动上不同颜色：
+        │  TRACE → 灰色    DEBUG → 绿色    INFO → 蓝色
+        │  WARN  → 黄色    ERROR → 红色
+        └─ 文件日志不用 %clr，因为日志文件里存 ANSI 颜色码会造成乱码
+      
+      ═══ 进程ID ═══
+      ${PID:- }
+        ├─ ${PID}       → Process ID（操作系统进程号）
+        ├─ :-           → 后面跟默认值（空格）
+        └─ 这个只在文件日志里用了，控制台有颜色不需要
+      
+      ═══════════════════════════════════════════════════════════════════
+      
+      整条日志组装起来的效果：
+      
+      控制台（彩色）：
+        2026-06-27 14:30:22.123  INFO  [main]  (reqId) — c.e.s.impl.AccountServiceImpl : 用户登录成功
+      
+      文件（纯文本）：
+        2026-06-27 14:30:22.123  INFO 12345 — [main] (reqId) c.e.s.impl.AccountServiceImpl : 用户登录成功
+      
+      拆分对应关系：
+        %d{...}     → 2026-06-27 14:30:22.123
+        %5p         →   INFO（注意前面有空格）
+        [%15.15t]   → [main]
+        %X{reqId}   → (abc123)
+        %logger{39} → c.e.s.impl.AccountServiceImpl
+        %m          → 用户登录成功
+    -->
+
+
+    <!-- ================================================================ -->
+    <!--  ③ Appender（输出目的地）— 控制台                              -->
+    <!-- ================================================================ -->
+    <!--
+      ConsoleAppender：把日志输出到终端命令行。
+      
+      在 IntelliJ IDEA 里 → 显示在 Run 面板
+      在 VS Code 里      → 显示在 TERMINAL 面板
+      在服务器上         → 显示在 ssh 终端窗口
+      
+      你启动项目后，在终端里看到的所有日志都是这个 Appender 输出的。
+    -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
+            <!-- 使用上面定义的控制台格式（带颜色） -->
             <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+            <!-- 字符编码，从 defaults.xml 继承，默认 UTF-8 -->
             <charset>${CONSOLE_LOG_CHARSET}</charset>
         </encoder>
     </appender>
 
+
+    <!-- ================================================================ -->
+    <!--  ④ Appender（输出目的地）— 文件（按日期/大小滚动）            -->
+    <!-- ================================================================ -->
+    <!--
+      RollingFileAppender：把日志写入磁盘文件。
+      
+      与普通 FileAppender 的区别：
+      普通 FileAppender → 从启动写到关闭，所有日志塞进同一个文件
+      RollingFileAppender → 自动切分文件（按天/按大小），防止单个文件过大
+      
+      如果你的项目运行半年不重启，普通 FileAppender 会产生一个 10GB 的日志文件，
+      编辑器打不开、搜索搜不了。RollingFileAppender 每天生成一个新文件，
+      每个文件最多 10MB，超过就自动编号（-0, -1, -2...），7天前的自动删除。
+    -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <encoder>
+            <!-- 使用上面定义的文件格式（纯文本，不带颜色） -->
             <pattern>${FILE_LOG_PATTERN}</pattern>
+            <!-- 字符编码，从 defaults.xml 继承，默认 UTF-8 -->
             <charset>${FILE_LOG_CHARSET}</charset>
         </encoder>
+
+        <!--
+          ═══ 滚动策略（核心中的核心） ═══
+          
+          SizeAndTimeBasedRollingPolicy = 按时间 + 按大小双重切分。
+          
+          翻译成人话就是：
+          1. 每天生成一个新日志文件（按时间切分）
+          2. 同一天内如果日志超过了 10MB，自动编号 -0, -1, -2...（按大小切分）
+          3. 只保留最近 7 天的日志（超期自动删除）
+          4. 下次启动时检查一次，把过期的一次性清理掉
+        -->
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+
+            <!--
+              ★ FileNamePattern — 日志文件的命名规则
+              
+              log/                          → 放在项目根目录的 log 文件夹里
+              %d{yyyy-MM-dd}                → 日期，每天一个文件夹/文件名
+              spring                        → 固定前缀，方便区分不同应用的日志
+              %i                            → 同一天内的文件序号（从 0 开始）
+              .log                          → 文件扩展名
+              
+              实际生成的文件名示例：
+                log/2026-06-27-spring-0.log   ← 今天第1个文件（刚启动/未满10MB）
+                log/2026-06-27-spring-1.log   ← 今天第2个文件（第1个写满10MB了）
+                log/2026-06-27-spring-2.log   ← 第3个
+                log/2026-06-26-spring-0.log   ← 昨天的日志
+                log/2026-06-25-spring-0.log   ← 前天的...
+            -->
             <FileNamePattern>log/%d{yyyy-MM-dd}-spring-%i.log</FileNamePattern>
+
+            <!--
+              cleanHistoryOnStart：启动时是否清理过期文件。
+              true → 项目每次启动都会检查并删除过期日志
+              false → 只在滚动时清理（如果项目很久不重启，过期文件不会被删）
+              建议 true，因为线上部署经常发布重启，能及时清理磁盘空间。
+            -->
             <cleanHistoryOnStart>true</cleanHistoryOnStart>
+
+            <!--
+              maxHistory：最多保留多少天的日志。
+              7 → 只保留最近 7 天的日志文件，第 8 天及以前的自动删除。
+              
+              怎么算的？
+              今天是 6月27日，maxHistory=7，那么：
+              保留：6月21日 ~ 6月27日（7天）
+              删除：6月20日及更早
+              
+              如果你用磁盘监控，1天的日志约 30-100MB（取决于请求量），
+              保留 7 天约 210MB-700MB，普通服务器完全扛得住。
+            -->
             <maxHistory>7</maxHistory>
+
+            <!--
+              maxFileSize：单个日志文件的最大体积。
+              10MB → 每个日志文件最多写 10MB，超过了就新建一个编号 +1 的文件。
+              
+              为什么要限制单个文件大小？
+              - 10MB 的文本文件用 VSCode/Notepad++ 打开不卡
+              - 100MB 的文本文件打开要等好几秒，搜个关键词要等更久
+              - 1GB 的文本文件基本打不开了
+            -->
             <maxFileSize>10MB</maxFileSize>
         </rollingPolicy>
     </appender>
 
+
+    <!-- ================================================================ -->
+    <!--  ⑤ Root Logger（根日志记录器）— 全局入口                      -->
+    <!-- ================================================================ -->
+    <!--
+      ★ root 是整个日志系统的"总管"。
+      
+      所有 Logger 都是 root 的子节点（包括你的代码里的 log.info(...)），
+      如果某个类没有单独配置 Logger，就完全继承 root 的设置。
+      
+      level="INFO"：
+        只输出 INFO 及以上级别的日志（INFO / WARN / ERROR）。
+        TRACE 和 DEBUG 级别的一律丢弃。
+        
+        常见的 level 设置：
+          level="TRACE"  → 输出所有日志（最详细，生产环境不要用，会刷爆磁盘）
+          level="DEBUG"  → 输出 DEBUG 及以上（开发调试用）
+          level="INFO"   → 输出 INFO 及以上（推荐生产环境使用）
+          level="WARN"   → 只输出 WARN 和 ERROR（安静模式）
+          level="ERROR"  → 只输出 ERROR（几乎不说话）
+          level="OFF"    → 完全关闭日志（基本不用）
+      
+      ★ 关于级别过滤的逻辑（面试常考）：
+      
+        当代码执行 log.info("xxx") 时：
+        
+        ① Logger 收到 "级别=INFO，消息=xxx"
+        ② Logger 查看自己的配置级别（这里 root 配了 INFO）
+        ③ 判断：INFO >= INFO → 通过 ✅ → 交给 Appender
+          如果代码里写的是 log.debug("xxx")：
+          判断：DEBUG < INFO → 不通过 ❌ → 直接丢弃
+        
+        所以日志级别是"单向过滤"的：
+          配置为 INFO  → 只看 INFO 及以上
+          配置为 WARN  → 只看 WARN 及以上
+          级别越高，内容越少
+      
+      appender-ref：
+        把 Console 和 FILE 两个 Appender 绑定到 root Logger 上。
+        意思是所有通过级别过滤的日志，同时输出到控制台和文件。
+        
+        如果你只想写文件、不打印到控制台，就删掉 CONSOLE 那行。
+    -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </root>
+
+
+    <!-- ================================================================ -->
+    <!--                                                                 
+    │                                                                      │
+    │          ╔══════════════════════════════════════════════════╗        │
+    │          ║                                                  ║        │
+    │          ║      Logback 日志系统 — 完整技术架构说明书        ║        │
+    │          ║                                                  ║        │
+    │          ╚══════════════════════════════════════════════════╝        │
+    │                                                                      │
+    │  下面回答你提到的所有问题：                                          │
+    │  ├─ 日志是谁打印的？                                                │
+    │  ├─ 它怎么知道要打印这些信息？                                      │
+    │  ├─ 这些信息是从哪里获取的？                                        │
+    │  ├─ 打印的级别是怎么决定的？                                        │
+    │  └─ 整个日志系统的完整架构是什么？                                  │
+    │                                                                      │
+    ════════════════════════════════════════════════════════════════════════
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  一、日志到底是谁打印的？                                        ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    先看你的代码里是怎么写日志的：
+
+        // Lombok 的 @Slf4j 注解
+        @Slf4j
+        @Service
+        public class AccountServiceImpl implements AccountService {
+            public void someMethod() {
+                log.info("用户 {} 登录成功", username);
+            }
+        }
+
+    @Slf4j 在编译时自动展开成：
+
+        private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(AccountServiceImpl.class);
+
+    所以真正的打印者是：org.slf4j.Logger 接口的实现类。
+
+    ═══ SLF4J → Logback 的桥梁 ═══
+
+    你的代码                  底层实现
+    ┌──────────┐     ┌──────────────────────┐
+    │ log.info │ ──► │ ch.qos.logback.      │
+    │ log.warn │     │ classic.Logger       │
+    │ log.error│     │ (继承自 SLF4J 的      │
+    └──────────┘     │  Logger 接口)        │
+                      └──────────────────────┘
+                               │
+                               ▼
+                      ┌──────────────────────┐
+                      │ ch.qos.logback.      │
+                      │ classic.Logger       │
+                      │ .log(Marker,         │
+                      │  Level, msg, args)   │  ← 核心方法
+                      └──────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+               Level 过滤          传递给 Appender
+              (>= INFO 才通过)      (控制台/文件)
+
+    一句话：SLF4J 是"接口/门面"，Logback 是"实现/干活的那个"。
+    你的代码只认识 SLF4J，不认识 Logback。换日志框架（比如换成 Log4j2）
+    代码一行都不用改——这就是 SLF4J 的作用。
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  二、这些信息是从哪里获取的？                                    ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    日志里每一段信息的来源：
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │  2026-06-27 14:30:22.123  INFO  [main]  (reqId) —             │
+    │  c.e.s.impl.AccountServiceImpl : 用户登录成功                   │
+    └─────────────────────────────────────────────────────────────────┘
+        ①      ②       ③      ④      ⑤               ⑥
+
+    ① 时间戳 %d — 从哪里来？
+       System.currentTimeMillis()
+       Logback 每打印一条日志就调一次 System.currentTimeMillis() 获取当前时间。
+       精确到毫秒，所以日志里能看到 14:30:22.123。
+
+    ② 日志级别 %p — 从哪里来？
+       你代码里写的：
+         log.info(...)    → 级别 = INFO
+         log.warn(...)    → 级别 = WARN
+         log.error(...)   → 级别 = ERROR
+       Logback 把级别作为一个参数传给内部方法 Logger.log(Level.INFO, msg)。
+
+       所以"是谁决定的"？是你写在代码里的那个方法名决定的。
+
+    ③ 线程名 %t — 从哪里来？
+       Thread.currentThread().getName()
+       哪个线程在执行你的代码，Logback 就取那个线程的名字。
+       
+       主线程：                 main
+       HTTP 请求线程：          http-nio-8080-exec-1、http-nio-8080-exec-2...
+       RabbitMQ 消费者线程：    SimpleAsyncTaskExecutor-1...
+       定时任务线程：            scheduling-1...
+
+       如果你的应用很慢，看线程名就能知道是哪个线程在干活，是不是所有线程
+       都卡在同一个地方（线程堆积）。
+
+    ④ 请求追踪ID %X{reqId} — 从哪里来？
+       从 MDC（Mapped Diagnostic Context）里取。
+       MDC 本质上是一个 ThreadLocal<Map String String>。
+       
+       什么是 ThreadLocal？
+       每个线程有一个独立的"储物柜"。A 线程往柜子里放的东西，B 线程看不到。
+       
+       流程：
+        请求到达 → 过滤器生成一个唯一 ID → MDC.put("reqId", id)
+        请求处理 → 所有日志都从 MDC.get("reqId") 获取这个 ID
+        请求结束 → MDC.clear() 清除
+
+       这样同一个请求经过 Controller → Service → Mapper 产生的所有日志
+       都共享同一个 reqId，方便在日志文件里搜索追踪。
+
+       当前你的项目没有这个过滤器，所以显示为 (system)。
+
+    ⑤ Logger 名称 %logger — 从哪里来？
+       LoggerFactory.getLogger(AccountServiceImpl.class)
+       
+       你传进去的类名决定了 Logger 的名字：
+         getLogger(AccountServiceImpl.class) → "com.example.service.impl.AccountServiceImpl"
+         getLogger(JwtUtils.class)           → "com.example.utils.JwtUtils"
+       
+       Logback 会把这个类名存下来，打印时取出来。%logger{39} 中的 39 表示
+       "只保留名字的最后 39 个字符"，所以 "com.example.service.impl.AccountServiceImpl"
+       被截断成 "c.e.s.impl.AccountServiceImpl"（从右边数 39 个字符，前面的用首字母缩写）。
+
+       这就是为什么日志里看到的是 c.e.s.impl.xxx 而不是完整的 com.example.service.impl.xxx。
+
+    ⑥ 消息内容 %m — 从哪里来？
+       你代码里写的：
+         log.info("用户 {} 登录成功", username)
+       
+       Logback 收到消息后，把 {} 替换成实际的 username 值：
+         "用户 张三 登录成功"
+       
+       注意：如果你用的 level 被过滤掉了（比如 root 配了 INFO，你写 log.debug(...)），
+       Logback 根本不会执行 {} 替换，性能开销为零。
+       所以推荐用 log.info("用户 {} 登录", id) 而不是 log.info("用户 " + id + " 登录")。
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  三、打印的级别是怎么决定的？                                    ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    级别判定涉及"三级决策链"：
+
+    第一级：你代码里写的
+    
+        log.info("xxx")    → 请求级别 = INFO
+        log.warn("xxx")    → 请求级别 = WARN
+        log.error("xxx")   → 请求级别 = ERROR
+        log.debug("xxx")   → 请求级别 = DEBUG
+    
+    第二级：配置文件中配的
+    
+        <root level="INFO">
+        表示 root Logger 的有效级别 = INFO
+    
+    第三级：Logger 继承链的最终决策
+    
+        当 Logger（比如 AccountServiceImpl 的 Logger）要判断是否输出时：
+        
+        ① 它自己的 level 是多少？
+           └─ 没有单独配置 → 继承父 Logger 的 level
+        ② 父 Logger（com.example.service.impl）的 level 是多少？
+           └─ 没有单独配置 → 继续往上继承
+        ③ ... 一直追到 root
+           └─ root 配置了 level="INFO"
+        
+        最终生效的 level = INFO
+        
+        所以判断：
+          log.info("xxx")   → INFO  >= INFO → ✅ 输出
+          log.debug("xxx")  → DEBUG <  INFO → ❌ 丢弃
+          log.warn("xxx")   → WARN  >= INFO → ✅ 输出
+    
+    如果你想单独给某个包开 DEBUG：
+    
+        <logger name="com.example.mapper" level="DEBUG"/>
+        
+        这样 mapper 包下的所有类的 Logger 有效级别就变成了 DEBUG，
+        而其他类还是继承 root 的 INFO。
+
+    完整的级别优先级链（从低到高）：
+    
+        ALL → TRACE → DEBUG → INFO → WARN → ERROR → FATAL → OFF
+        （全开）                                    （全关）
+
+        配成 INFO 就等于说："TRACE 和 DEBUG 我不要，其他都给我。"
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  四、为什么日志能整整齐齐、格式统一？                            ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    因为所有的日志输出**不走 System.out.println()**，而是统一走 Logback
+    的管道。就像工厂的传送带：
+
+       你的代码                            Logback 管道
+    ┌────────────┐     ┌────────────┐     ┌──────────────┐     ┌──────────┐
+    │ log.info() │ ──► │ Level 过滤 │ ──► │ Appender     │ ──► │ 格式化   │
+    │ log.warn() │     │ >= INFO?  │     │ (控制台/文件) │     │ (加入    │
+    │ log.error()│     └────────────┘     │              │     │  时间/   │
+    └────────────┘                        └──────────────┘     │  线程/   │
+                                                               │  级别等) │
+                                                               └──────────┘
+                                                                     │
+                                                                     ▼
+                                                               ┌──────────┐
+                                                               │ 写入     │
+                                                               │ System.out│
+                                                               │ 或 文件  │
+                                                               └──────────┘
+
+    每一行日志在写入之前，都经过了 Appender → Encoder → Layout 的处理链：
+
+        Appender（输出到哪里）
+            │
+            ▼
+        Encoder（要不要编码转换？UTF-8 / GBK?）
+            │
+            ▼
+        Layout / Pattern（按什么格式拼装？）
+            ├─ 时间：System.currentTimeMillis()
+            ├─ 级别：代码传过来的参数
+            ├─ 线程：Thread.currentThread().getName()
+            ├─ Logger名：创建 Logger 时传入的类名
+            ├─ MDC值：MDC.get("reqId")
+            └─ 消息：代码传过来的参数
+
+    每个环节都是 Logback 内部自动完成的，不需要开发者干预。所以只要配置
+    了统一的 pattern，所有类的日志就都是统一的格式。
+
+    ★ 关键区别（面试考点）：
+
+        System.out.println("xxx")
+          ├─ 只输出到你指定的位置
+          ├─ 没有级别控制（无法区分 INFO / ERROR）
+          ├─ 没有统一格式（没有时间、线程、Logger名）
+          ├─ 不能通过配置文件控制是否输出
+          └─ 同步阻塞，性能差
+
+        log.info("xxx")
+          ├─ 可以通过配置控制输出到哪（控制台/文件/网络）
+          ├─ 有级别控制（可以按级别过滤）
+          ├─ 有统一格式（通过 pattern 配置）
+          ├─ 可以通过配置文件开关（不需要改代码）
+          └─ 异步不阻塞（AsyncAppender），性能高
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  五、完整的技术架构图（从代码到磁盘的全链路）                    ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                     │
+    │  ① 你的 Java 代码                                                   │
+    │                                                                     │
+    │     @Slf4j → log.info("用户 {} 登录", name);                        │
+    │       │                                                             │
+    │       │ 编译时 Lombok 展开为：                                       │
+    │       │ LoggerFactory.getLogger(AccountServiceImpl.class)           │
+    │       ▼                                                             │
+    │                                                                     │
+    │  ② SLF4J 门面层（接口，不干活）                                     │
+    │                                                                     │
+    │     org.slf4j.Logger 接口                                           │
+    │       ├─ .info(String msg, Object... args)                          │
+    │       ├─ .warn(String msg, Object... args)                          │
+    │       ├─ .error(String msg, Object... args)                         │
+    │       └─ .debug(...) / .trace(...)                                  │
+    │       │                                                             │
+    │       │ SLF4J 不做任何事，它只是"定义了一套日志方法签名"，           │
+    │       │ 具体实现在启动时通过 ServiceLoader 机制自动发现并绑定。       │
+    │       ▼                                                             │
+    │                                                                     │
+    │  ③ Logback 核心实现层（真正干活的）                                  │
+    │                                                                     │
+    │     ch.qos.logback.classic.Logger                                   │
+    │       │  (继承 org.slf4j.Logger 接口)                                │
+    │       │                                                             │
+    │       ├── 第 1 步：判断级别                                          │
+    │       │   ┌──────────────────────────────────────────┐              │
+    │       │   │ Logger.effectiveLevel ≥ 请求级别?        │              │
+    │       │   │ 例：effectiveLevel=INFO, 请求=INFO → ✅ │              │
+    │       │   │      effectiveLevel=INFO, 请求=DEBUG → ❌│              │
+    │       │   └──────────────────────────────────────────┘              │
+    │       │      │                                                      │
+    │       │      ▼ 通过                                                 │
+    │       │                                                             │
+    │       ├── 第 2 步：构造 LoggingEvent                                 │
+    │       │   Logback 把"要打印的信息"打包成一个事件对象：                │
+    │       │                                                             │
+    │       │   LoggingEvent {                                           │
+    │       │     level:        INFO          ← 从代码参数获取            │
+    │       │     message:      "用户 {} 登录" ← 从代码参数获取            │
+    │       │     args:         ["张三"]      ← 从代码参数获取            │
+    │       │     formattedMsg: "用户 张三 登录" ← Logback 替换 {} 后的结果│
+    │       │     threadName:   "main"        ← Thread.currentThread()   │
+    │       │     loggerName:   "c.e.s.impl.AccountServiceImpl" ← 预存值 │
+    │       │     timestamp:    1719474622123 ← System.currentTimeMillis()│
+    │       │     mdcMap:       {reqId=xxx}   ← MDC.getCopyOfContextMap() │
+    │       │     // ... 还有 callerData（行号）、throwable（异常）等     │
+    │       │   }                                                         │
+    │       │                                                             │
+    │       │   ★ 关键：所有信息在这一步就已经全部收集好了！               │
+    │       │     后面 Appender 只需要从这个事件对象里"读"就行了。         │
+    │       │                                                             │
+    │       │   ▼                                                         │
+    │       │                                                             │
+    │       ├── 第 3 步：调用 Appender                                    │
+    │       │   把 LoggingEvent 传给所有绑定的 Appender。                  │
+    │       │   ┌──────────────────────────────────────────┐              │
+    │       │   │ <root level="INFO">                      │              │
+    │       │   │   <appender-ref ref="CONSOLE"/>  ────────┤───┐         │
+    │       │   │   <appender-ref ref="FILE"/>     ────────┤───┤──┐      │
+    │       │   └──────────────────────────────────────────┘   │  │      │
+    │       ▼                                                   ▼  ▼      │
+    │                                                                     │
+    │  ④ Appender 层（输出目的地）                                        │
+    │                                                                     │
+    │     ┌── ConsoleAppender ──────────────────────┐                     │
+    │     │  ConsoleAppender.append(LoggingEvent e)  │                     │
+    │     │    ↓                                     │                     │
+    │     │  Encoder.encode(e)                       │                     │
+    │     │    ↓                                     │                     │
+    │     │  Layout.doLayout(e) → 拼装字符串         │                     │
+    │     │    ↓                                     │                     │
+    │     │  System.out.write(字符串.getBytes())     │                     │
+    │     └──────────────────────────────────────────┘                     │
+    │                                                                     │
+    │     ┌── RollingFileAppender ───────────────────┐                     │
+    │     │  RollingFileAppender.append(e)            │                     │
+    │     │    ↓                                     │                     │
+    │     │  Encoder.encode(e)                       │                     │
+    │     │    ↓                                     │                     │
+    │     │  Layout.doLayout(e) → 拼装字符串         │                     │
+    │     │    ↓                                     │                     │
+    │     │  判断：当前文件 > 10MB?                   │                     │
+    │     │    ├─ 是 → 创建新文件（编号+1）           │                     │
+    │     │    └─ 否 → 继续写入当前文件               │                     │
+    │     │    ↓                                     │                     │
+    │     │  FileOutputStream.write(字符串.getBytes())│                     │
+    │     └──────────────────────────────────────────┘                     │
+    │                                                                     │
+    │  ⑤ Layout/Pattern 层（格式拼装）                                    │
+    │                                                                     │
+    │     PatternLayout.doLayout(LoggingEvent e) {                        │
+    │       // 把 pattern 字符串里的 %d, %p, %t, %m 等占位符              │
+    │       // 逐个替换成 LoggingEvent 对象里的实际值                     │
+    │       return  "2026-06-27 14:30:22.123  INFO  [main]  " +          │
+    │               "(reqId) — c.e.s.impl.AccountServiceImpl : " +      │
+    │               "用户 张三 登录\n";                                   │
+    │     }                                                               │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  ⑥ 最终输出                                                        │
+    │                                                                     │
+    │     控制台：终端窗口里显示彩色日志                                   │
+    │     文件：  log/2026-06-27-spring-0.log 里写入纯文本日志            │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+
+
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                                                                  ║
+    ║  六、一句话总结                                                  ║
+    ║                                                                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
+    你的代码写 log.info() → SLF4J 接口接住 → Logback 实现处理 →
+    Logger 判断级别是否够 → 构造 LoggingEvent（收集所有信息） →
+    传给 Appender → Appender 用 Layout 格式化 → 写入控制台/文件
+
+    整个流程中：
+    ├─ "谁打印的"       → Logback 的 Logger 实现类
+    ├─ "怎么知道的"     → 代码传的参数（级别、消息）+ JVM API（时间、线程）
+    ├─ "信息从哪来"     → LoggingEvent 里提前收集好的
+    ├─ "级别谁决定"     → 配置文件中的 level + 代码里的方法名
+    └─ "为什么整齐统一" → 统一的 PatternLayout 格式化所有日志
+
+    ─────────────────────────────────────────────────────────────────────
+    附录：实用速查
+    ─────────────────────────────────────────────────────────────────────
+
+    场景 1：想单独看 MyBatis 的 SQL 日志
+      <logger name="com.example.mapper" level="DEBUG"/>
+
+    场景 2：Spring 框架的日志太吵了，不想看
+      <logger name="org.springframework" level="WARN"/>
+
+    场景 3：生产环境只要错误日志，不要 INFO
+      <root level="WARN"/>
+
+    场景 4：在 dev 环境想看更详细的信息
+      在 application-dev.yaml 里加：
+        logging:
+          level:
+            com.example.mapper: DEBUG
+
+    场景 5：日志文件太多占磁盘，减少保留天数
+      修改 <maxHistory>7</maxHistory> → 3（只保留 3 天）
+-->
 </configuration>

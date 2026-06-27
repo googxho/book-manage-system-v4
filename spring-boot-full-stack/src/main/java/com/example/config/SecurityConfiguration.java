@@ -3,6 +3,7 @@ package com.example.config;
 import com.example.entity.RestBean;
 import com.example.entity.vo.response.AuthorizeVO;
 import com.example.filter.JwtAuthorizeFilter;
+import com.example.filter.RequestLogFilter;
 import com.example.utils.JwtUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -56,9 +57,13 @@ public class SecurityConfiguration {
     // JWT 工具类，用于创建和解析 JWT 令牌
     @Resource      // 按字段名 "utils" 查找 Bean → 找到 JwtUtils 的实例
     JwtUtils utils;
-    
+
     @Resource      // 按字段名 "jwtAuthorizeFilter" 查找 → 找到 JwtAuthorizeFilter 的实例
     JwtAuthorizeFilter jwtAuthorizeFilter;
+
+    // 请求日志过滤器，记录每个请求的 URL、IP、耗时、响应等
+    @Resource
+    RequestLogFilter requestLogFilter;
 
     // 数据库用户认证服务，登录时自动从数据库加载用户信息
     @Resource
@@ -107,6 +112,10 @@ public class SecurityConfiguration {
                     // 否则参数校验失败时，Spring 转发到 /error，Spring Security 又把它
                     // 重定向到 /login，导致用户看到的是 302 而不是具体的错误信息
                     conf.requestMatchers("/error").permitAll();
+                    // /swagger-ui/** 和 /v3/api-docs/** 是 Swagger 文档路径，不需要认证
+                    // 这样开发者在浏览器打开 http://localhost:8080/swagger-ui/index.html
+                    // 就能直接看到 API 文档，不需要先登录
+                    conf.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll();
                     // 其他所有请求都需要登录认证后才能访问
                     conf.anyRequest().authenticated();
                 })
@@ -154,9 +163,16 @@ public class SecurityConfiguration {
                     });
                 })
                 // ========== 7. 注册自定义过滤器 ==========
-                // 将 JwtAuthorizeFilter 添加到 UsernamePasswordAuthenticationFilter 之前
-                // 这样请求到达登录认证之前，JWT 过滤器会先尝试从请求头中提取 Token 进行认证
-                .addFilterBefore(jwtAuthorizeFilter, UsernamePasswordAuthenticationFilter.class)
+                // 过滤器链执行顺序（从前到后）：
+                //   RequestLogFilter → JwtAuthorizeFilter → UsernamePasswordAuthenticationFilter
+                //
+                // ① RequestLogFilter：最先执行，为每个请求生成追踪 ID 并记录请求日志
+                // ② JwtAuthorizeFilter：尝试从 Authorization 请求头中解析 JWT，
+                //    如果 JWT 有效则设置认证信息到 SecurityContext
+                // ③ UsernamePasswordAuthenticationFilter：Spring Security 内置，
+                //    处理表单登录（/api/auth/login），认证通过后生成新 JWT
+                .addFilterBefore(requestLogFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthorizeFilter, RequestLogFilter.class)
                 // ========== 8. 构建 ==========
                 .build();
     }

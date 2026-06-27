@@ -225,6 +225,30 @@
         </dependency>
 
         <!--
+          SpringDoc OpenAPI — 自动生成 API 接口文档（Swagger UI）。
+          本质：在项目运行时自动扫描所有 @RestController，读取 @RequestMapping、
+                @GetMapping 等注解，生成 OpenAPI 3.0 规范的 JSON 文档，
+                并通过 /swagger-ui/index.html 提供可视化的 API 调试页面。
+          本项目用它生成登录、注册、密码重置等接口的文档，方便开发和联调。
+
+          常用注解：
+            @Tag(name = "xxx")               —— 给 Controller 分组打标签
+            @Operation(summary = "xxx")       —— 给接口添加说明
+            @Parameter(description = "xxx")   —— 给参数添加说明
+            @Schema(description = "xxx")      —— 给模型字段添加说明
+            @ApiResponse(description = "xxx") —— 给响应添加说明
+
+          访问地址（项目启动后）：
+            Swagger UI：  http://localhost:8080/swagger-ui/index.html
+            API JSON：    http://localhost:8080/v3/api-docs
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.1.0</version>
+        </dependency>
+
+        <!--
           Redis — 放在内存里的键值对数据库，读写极快。
           本质：数据存在内存中，不像 MySQL 存在磁盘，所以读写速度是毫秒级。
                 就像一个超级大型的 Map<String, String>，可以设置过期时间。
